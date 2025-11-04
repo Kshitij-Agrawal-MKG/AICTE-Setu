@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +14,20 @@ interface LoginPageProps {
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [, setLocation] = useLocation();
 
   const handleLogin = (role: string) => {
     console.log('Login attempted:', { role, email });
     onLogin?.(role, email);
+    
+    // Navigate to the appropriate dashboard
+    if (role === "institution") {
+      setLocation("/dashboard");
+    } else if (role === "evaluator") {
+      setLocation("/evaluator/dashboard");
+    } else if (role === "admin") {
+      setLocation("/admin/dashboard");
+    }
   };
 
   return (
