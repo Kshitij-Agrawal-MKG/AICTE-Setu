@@ -4,8 +4,10 @@ import ApplicationCard from "@/components/ApplicationCard";
 import { Plus, FileText, Clock, CheckCircle, XCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { useLocation } from "wouter";
 
 export default function InstitutionDashboard() {
+  const [, setLocation] = useLocation();
   const { data, isLoading } = useQuery({
     queryKey: ["institution-dashboard"],
     queryFn: () => api.getInstitutionDashboard(),
@@ -33,7 +35,7 @@ export default function InstitutionDashboard() {
             Manage your AICTE approval applications
           </p>
         </div>
-        <Button size="lg" data-testid="button-new-application">
+        <Button size="lg" onClick={() => setLocation("/new-application")} data-testid="button-new-application">
           <Plus className="w-4 h-4 mr-2" />
           New Application
         </Button>

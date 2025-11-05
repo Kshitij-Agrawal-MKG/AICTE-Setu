@@ -8,9 +8,17 @@ import { Textarea } from "@/components/ui/textarea";
 import DocumentUploadZone from "@/components/DocumentUploadZone";
 import { ArrowLeft, Save, Send } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { useLocation } from "wouter";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ApplicationFormPage() {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
+  const [applicationId, setApplicationId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     applicationType: "",
     institutionName: "",
@@ -24,14 +32,115 @@ export default function ApplicationFormPage() {
   const totalSteps = 4;
   const progress = (currentStep / totalSteps) * 100;
 
-  const handleSubmit = () => {
-    console.log('Application submitted:', formData);
+  const saveApplicationMutation = useMutation({
+    mutationFn: async () => {
+      const data = {
+        applicationType: formData.applicationType,
+        institutionName: formData.institutionName || undefined,
+        address: formData.address || undefined,
+        state: formData.state || undefined,
+        courseName: formData.courseName || undefined,
+        intake: formData.intake ? parseInt(formData.intake) : undefined,
+        description: formData.description || undefined,
+      };
+      
+      if (applicationId) {
+        const response = await apiRequest("PUT", `/api/applications/${applicationId}`, data);
+        return await response.json();
+      } else {
+        const response = await apiRequest("POST", "/api/applications", data);
+        return await response.json();
+      }
+    },
+    onSuccess: (data) => {
+      if (!applicationId) {
+        setApplicationId(data.application.applicationNumber);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/institution/applications"] });
+      queryClient.invalidateQueries({ queryKey: ["institution-dashboard"] });
+    },
+  });
+
+  const submitApplicationMutation = useMutation({
+    mutationFn: async (appId: string) => {
+      return await apiRequest("POST", `/api/applications/${appId}/submit`);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Application submitted successfully!",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/institution/applications"] });
+      queryClient.invalidateQueries({ queryKey: ["institution-dashboard"] });
+      setLocation("/applications");
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to submit application. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveDraft = async () => {
+    if (!formData.applicationType) {
+      toast({
+        title: "Error",
+        description: "Please select an application type before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await saveApplicationMutation.mutateAsync();
+      toast({
+        title: "Success",
+        description: applicationId ? "Draft updated successfully!" : "Draft saved successfully!",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to save draft. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.applicationType || !formData.courseName) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      let appId = applicationId;
+      if (!appId) {
+        const result = await saveApplicationMutation.mutateAsync();
+        appId = result.application.applicationNumber;
+      }
+      
+      if (appId) {
+        await submitApplicationMutation.mutateAsync(appId);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to submit application. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6" data-testid="application-form">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" data-testid="button-back">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/applications")} data-testid="button-back">
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div className="flex-1">
@@ -40,9 +149,14 @@ export default function ApplicationFormPage() {
             Step {currentStep} of {totalSteps}
           </p>
         </div>
-        <Button variant="outline" data-testid="button-save-draft">
+        <Button 
+          variant="outline" 
+          onClick={handleSaveDraft}
+          disabled={saveApplicationMutation.isPending}
+          data-testid="button-save-draft"
+        >
           <Save className="w-4 h-4 mr-2" />
-          Save Draft
+          {saveApplicationMutation.isPending ? "Saving..." : "Save Draft"}
         </Button>
       </div>
 
@@ -234,9 +348,13 @@ export default function ApplicationFormPage() {
             Next
           </Button>
         ) : (
-          <Button onClick={handleSubmit} data-testid="button-submit">
+          <Button 
+            onClick={handleSubmit}
+            disabled={submitApplicationMutation.isPending || saveApplicationMutation.isPending}
+            data-testid="button-submit"
+          >
             <Send className="w-4 h-4 mr-2" />
-            Submit Application
+            {submitApplicationMutation.isPending ? "Submitting..." : "Submit Application"}
           </Button>
         )}
       </div>
