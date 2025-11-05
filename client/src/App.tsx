@@ -11,10 +11,10 @@ import LoginPage from "@/pages/LoginPage";
 import InstitutionDashboard from "@/pages/InstitutionDashboard";
 import EvaluatorDashboard from "@/pages/EvaluatorDashboard";
 import AdminDashboard from "@/pages/AdminDashboard";
-import ApplicationFormPage from "@/pages/ApplicationFormPage";
 import ApplicationDetailPage from "@/pages/ApplicationDetailPage";
 import MessagesPage from "@/pages/MessagesPage";
 import SettingsPage from "@/pages/SettingsPage";
+import EvaluationTrackerPage from "@/pages/EvaluationTrackerPage";
 import NotFound from "@/pages/not-found";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -61,16 +61,18 @@ function Router() {
             <Switch>
               <Route path="/dashboard" component={InstitutionDashboard} />
               <Route path="/applications" component={InstitutionDashboard} />
-              <Route path="/new-application" component={ApplicationFormPage} />
+              <Route path="/evaluation-tracker" component={EvaluationTrackerPage} />
               <Route path="/application/:id" component={ApplicationDetailPage} />
               <Route path="/messages" component={MessagesPage} />
               <Route path="/settings" component={SettingsPage} />
               
               <Route path="/evaluator/dashboard" component={EvaluatorDashboard} />
               <Route path="/evaluator/applications" component={EvaluatorDashboard} />
+              <Route path="/evaluator/tracker" component={EvaluationTrackerPage} />
               
               <Route path="/admin/dashboard" component={AdminDashboard} />
               <Route path="/admin/applications" component={InstitutionDashboard} />
+              <Route path="/admin/tracker" component={EvaluationTrackerPage} />
               
               <Route component={NotFound} />
             </Switch>

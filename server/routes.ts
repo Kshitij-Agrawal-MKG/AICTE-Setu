@@ -664,6 +664,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/applications/tracker", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      let allApplications;
+      
+      if (req.session.userRole === "institution") {
+        const institution = await db.query.institutions.findFirst({
+          where: eq(institutions.userId, req.session.userId!),
+        });
+        
+        if (!institution) {
+          return res.status(404).json({ message: "Institution not found" });
+        }
+        
+        allApplications = await db.query.applications.findMany({
+          where: eq(applications.institutionId, institution.id),
+          orderBy: [desc(applications.createdAt)],
+        });
+      } else {
+        allApplications = await db.query.applications.findMany({
+          orderBy: [desc(applications.createdAt)],
+        });
+      }
+
+      const applicationsWithDetails = await Promise.all(
+        allApplications.map(async (app) => {
+          const appDocuments = await db.query.documents.findMany({
+            where: eq(documents.applicationId, app.id),
+          });
+
+          const approvedDocs = appDocuments.filter(doc => doc.status === "approved").length;
+          const rejectedDocs = appDocuments.filter(doc => doc.status === "rejected").length;
+          const pendingDocs = appDocuments.filter(doc => doc.status === "pending").length;
+          const totalDocs = appDocuments.length;
+          const evaluationProgress = totalDocs > 0 
+            ? Math.round(((approvedDocs + rejectedDocs) / totalDocs) * 100)
+            : 0;
+
+          return {
+            ...app,
+            documents: appDocuments,
+            approvedDocs,
+            rejectedDocs,
+            pendingDocs,
+            evaluationProgress,
+          };
+        })
+      );
+
+      res.json(applicationsWithDetails);
+    } catch (error) {
+      console.error("Get tracker error:", error);
+      res.status(500).json({ message: "Failed to fetch tracker data" });
+    }
+  });
+
   app.get("/api/applications/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const application = await db.query.applications.findFirst({

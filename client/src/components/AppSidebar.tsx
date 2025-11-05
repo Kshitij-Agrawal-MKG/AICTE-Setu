@@ -1,5 +1,4 @@
 import {
-  Building2,
   FileText,
   LayoutDashboard,
   MessageSquare,
@@ -7,7 +6,8 @@ import {
   Settings,
   LogOut,
   BarChart3,
-  ClipboardCheck
+  ClipboardCheck,
+  CheckCircle2
 } from "lucide-react";
 import {
   Sidebar,
@@ -30,18 +30,19 @@ const menuItems = {
   institution: [
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
     { title: "My Applications", url: "/applications", icon: FileText },
-    { title: "New Application", url: "/new-application", icon: Building2 },
+    { title: "Evaluation Tracker", url: "/evaluation-tracker", icon: CheckCircle2 },
     { title: "Messages", url: "/messages", icon: MessageSquare },
   ],
   evaluator: [
     { title: "Dashboard", url: "/evaluator/dashboard", icon: LayoutDashboard },
     { title: "Assigned Applications", url: "/evaluator/applications", icon: ClipboardCheck },
-    { title: "Evaluation Forms", url: "/evaluator/forms", icon: FileText },
+    { title: "Evaluation Tracker", url: "/evaluator/tracker", icon: CheckCircle2 },
     { title: "Messages", url: "/evaluator/messages", icon: MessageSquare },
   ],
   admin: [
     { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
     { title: "All Applications", url: "/admin/applications", icon: FileText },
+    { title: "Evaluation Tracker", url: "/admin/tracker", icon: CheckCircle2 },
     { title: "User Management", url: "/admin/users", icon: Users },
     { title: "Analytics", url: "/admin/analytics", icon: BarChart3 },
     { title: "Messages", url: "/admin/messages", icon: MessageSquare },
