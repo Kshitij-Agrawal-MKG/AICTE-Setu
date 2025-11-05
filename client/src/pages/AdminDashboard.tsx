@@ -5,6 +5,7 @@ import { FileText, Users, TrendingUp, Clock, CheckCircle, AlertTriangle } from "
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { Link } from "wouter";
 
 export default function AdminDashboard() {
   const { data, isLoading } = useQuery({
@@ -12,28 +13,54 @@ export default function AdminDashboard() {
     queryFn: () => api.getAdminDashboard(),
   });
 
+  const { data: alertsData, isLoading: alertsLoading } = useQuery({
+    queryKey: ["admin-alerts"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/alerts", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch alerts");
+      return response.json();
+    },
+  });
+
   const stats = [
-    { title: "Total Applications", value: String(data?.stats.totalApplications || 0), change: "+12%", icon: FileText },
-    { title: "Active Evaluators", value: String(data?.stats.activeEvaluators || 0), change: "+5%", icon: Users },
-    { title: "Approval Rate", value: `${data?.stats.approvalRate || 0}%`, change: "+3%", icon: TrendingUp },
-    { title: "Avg. Processing Time", value: data?.stats.avgProcessingTime || "0 days", change: "-2 days", icon: Clock },
+    { title: "Total Applications", value: String(data?.stats.totalApplications || 0), icon: FileText },
+    { title: "Active Evaluators", value: String(data?.stats.activeEvaluators || 0), icon: Users },
+    { title: "Approval Rate", value: `${data?.stats.approvalRate || 0}%`, icon: TrendingUp },
+    { title: "Avg. Processing Time", value: data?.stats.avgProcessingTime || "0 days", icon: Clock },
   ];
 
   const chartData = data?.chartData || [];
 
-  const workflowStages = (data?.workflowStages || []).map((w: any, i: number) => ({
+  interface WorkflowStage {
+    stage: string;
+    count: number;
+  }
+
+  const workflowStages = (data?.workflowStages || []).map((w: WorkflowStage, i: number) => ({
     stage: w.stage,
     count: w.count,
     color: ["bg-blue-500", "bg-yellow-500", "bg-purple-500", "bg-orange-500", "bg-green-500"][i % 5]
   }));
 
-  const alerts = [
-    { id: 1, type: "warning", message: "15 applications pending evaluator assignment", icon: AlertTriangle },
-    { id: 2, type: "info", message: "8 site visits scheduled for next week", icon: CheckCircle },
-    { id: 3, type: "warning", message: "5 applications nearing deadline", icon: Clock },
-  ];
+  interface Alert {
+    type: string;
+    message: string;
+    action: string;
+    actionUrl: string;
+  }
 
-  if (isLoading) {
+  const alerts = (alertsData?.alerts || []).map((alert: Alert, i: number) => ({
+    id: i + 1,
+    type: alert.type,
+    message: alert.message,
+    icon: alert.type === "warning" ? AlertTriangle : CheckCircle,
+    action: alert.action,
+    actionUrl: alert.actionUrl,
+  }));
+
+  if (isLoading || alertsLoading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
 
@@ -58,10 +85,9 @@ export default function AdminDashboard() {
                 <Icon className="w-4 h-4 text-primary" />
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold mb-1" data-testid={`stat-${stat.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                <div className="text-3xl font-bold" data-testid={`stat-${stat.title.toLowerCase().replace(/\s+/g, '-')}`}>
                   {stat.value}
                 </div>
-                <p className="text-xs text-green-600 font-medium">{stat.change} from last month</p>
               </CardContent>
             </Card>
           );
@@ -91,15 +117,19 @@ export default function AdminDashboard() {
             <CardTitle>Workflow Distribution</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {workflowStages.map((item) => (
-              <div key={item.stage}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{item.stage}</span>
-                  <span className="text-sm text-muted-foreground">{item.count} applications</span>
+            {workflowStages.map((item: { stage: string; count: number; color: string }) => {
+              const totalApps = workflowStages.reduce((sum: number, stage: { count: number }) => sum + stage.count, 0);
+              const percentage = totalApps > 0 ? (item.count / totalApps) * 100 : 0;
+              return (
+                <div key={item.stage}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">{item.stage}</span>
+                    <span className="text-sm text-muted-foreground">{item.count} applications</span>
+                  </div>
+                  <Progress value={percentage} className="h-2" />
                 </div>
-                <Progress value={(item.count / 135) * 100} className="h-2" />
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       </div>
@@ -110,20 +140,28 @@ export default function AdminDashboard() {
           <Button variant="outline" size="sm">View All</Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          {alerts.map((alert) => {
-            const Icon = alert.icon;
-            return (
-              <div
-                key={alert.id}
-                className="flex items-center gap-3 p-3 rounded-lg border bg-card/50"
-                data-testid={`alert-${alert.id}`}
-              >
-                <Icon className={`w-5 h-5 ${alert.type === 'warning' ? 'text-yellow-600' : 'text-blue-600'}`} />
-                <p className="text-sm flex-1">{alert.message}</p>
-                <Button variant="ghost" size="sm">View</Button>
-              </div>
-            );
-          })}
+          {alerts.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No alerts at this time</p>
+          ) : (
+            alerts.map((alert: { id: number; type: string; message: string; icon: any; action: string; actionUrl: string }) => {
+              const Icon = alert.icon;
+              return (
+                <div
+                  key={alert.id}
+                  className="flex items-center gap-3 p-3 rounded-lg border bg-card/50"
+                  data-testid={`alert-${alert.id}`}
+                >
+                  <Icon className={`w-5 h-5 ${alert.type === 'warning' ? 'text-yellow-600' : 'text-blue-600'}`} />
+                  <p className="text-sm flex-1">{alert.message}</p>
+                  <Link href={alert.actionUrl}>
+                    <Button variant="ghost" size="sm" data-testid={`button-alert-${alert.id}`}>
+                      {alert.action}
+                    </Button>
+                  </Link>
+                </div>
+              );
+            })
+          )}
         </CardContent>
       </Card>
     </div>

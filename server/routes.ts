@@ -468,44 +468,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/admin/dashboard", requireAuth, requireRole("admin"), async (req: AuthRequest, res: Response) => {
     try {
-      const [allApps, activeEvaluators, chartData, workflowDistribution] = await Promise.all([
-        db.select().from(applications),
+      const [totalStats, activeEvaluators, monthlyChartData, workflowDistribution, avgProcessing] = await Promise.all([
+        db.select({
+          total: count(),
+          approved: count(sql`CASE WHEN ${applications.status} = 'approved' THEN 1 END`)
+        }).from(applications),
         db.select({ count: count() }).from(users).where(eq(users.role, "evaluator")),
         db.select({
-          month: sql`TO_CHAR(${applications.createdAt}, 'Mon')`,
-          count: count()
-        }).from(applications).groupBy(sql`TO_CHAR(${applications.createdAt}, 'Mon')`),
+          month: sql<string>`DATE_TRUNC('month', ${applications.createdAt})`,
+          applications: count()
+        })
+          .from(applications)
+          .groupBy(sql`DATE_TRUNC('month', ${applications.createdAt})`)
+          .orderBy(desc(sql`DATE_TRUNC('month', ${applications.createdAt})`))
+          .limit(12),
         db.select({
           status: applications.status,
           count: count()
         }).from(applications).groupBy(applications.status),
+        db.select({
+          avgDays: sql<number>`COALESCE(AVG(EXTRACT(EPOCH FROM (${applications.updatedAt} - ${applications.submittedAt})) / 86400), 0)::int`
+        })
+          .from(applications)
+          .where(and(
+            eq(applications.status, "approved"),
+            sql`${applications.submittedAt} IS NOT NULL`,
+            sql`${applications.updatedAt} IS NOT NULL`
+          )),
       ]);
 
+      const totalCount = Number(totalStats[0]?.total || 0);
+      const approvedCount = Number(totalStats[0]?.approved || 0);
+      const avgDays = Number(avgProcessing[0]?.avgDays || 0);
+
       const stats = {
-        totalApplications: allApps.length,
-        activeEvaluators: activeEvaluators[0].count,
-        approvalRate: allApps.length > 0 ? Math.round((allApps.filter(a => a.status === "approved").length / allApps.length) * 100) : 0,
-        avgProcessingTime: "18 days",
+        totalApplications: totalCount,
+        activeEvaluators: Number(activeEvaluators[0]?.count || 0),
+        approvalRate: totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0,
+        avgProcessingTime: `${avgDays} days`,
       };
 
-      const monthlyData = [
-        { name: "Jan", applications: 120 },
-        { name: "Feb", applications: 145 },
-        { name: "Mar", applications: 132 },
-        { name: "Apr", applications: 168 },
-        { name: "May", applications: 189 },
-        { name: "Jun", applications: 210 },
-      ];
+      const chartData = monthlyChartData
+        .reverse()
+        .map(item => {
+          const date = new Date(item.month);
+          const monthName = date.toLocaleString('default', { month: 'short' });
+          const year = date.getFullYear();
+          return {
+            name: `${monthName} ${year}`,
+            applications: Number(item.applications),
+          };
+        });
 
       const workflow = workflowDistribution.map(w => ({
         stage: w.status,
-        count: w.count,
+        count: Number(w.count),
       }));
 
-      res.json({ stats, chartData: monthlyData, workflowStages: workflow });
+      res.json({ stats, chartData, workflowStages: workflow });
     } catch (error) {
       console.error("Admin dashboard error:", error);
       res.status(500).json({ message: "Failed to fetch admin dashboard data" });
+    }
+  });
+
+  app.get("/api/admin/alerts", requireAuth, requireRole("admin"), async (req: AuthRequest, res: Response) => {
+    try {
+      const alerts = [];
+      
+      const unassignedApps = await db.select({ count: count() })
+        .from(applications)
+        .where(and(
+          eq(applications.status, "under_evaluation"),
+          sql`NOT EXISTS (SELECT 1 FROM ${evaluatorAssignments} WHERE ${evaluatorAssignments.applicationId} = ${applications.id})`
+        ));
+
+      if (unassignedApps[0] && Number(unassignedApps[0].count) > 0) {
+        alerts.push({
+          type: "warning",
+          message: `${unassignedApps[0].count} applications pending evaluator assignment`,
+          action: "Assign Evaluators",
+          actionUrl: "/admin/applications"
+        });
+      }
+
+      const upcomingSiteVisits = await db.select({ count: count() })
+        .from(evaluatorAssignments)
+        .where(and(
+          sql`${evaluatorAssignments.completedAt} IS NULL`,
+          sql`${evaluatorAssignments.deadline} IS NOT NULL AND ${evaluatorAssignments.deadline} >= CURRENT_DATE AND ${evaluatorAssignments.deadline} <= CURRENT_DATE + INTERVAL '7 days'`
+        ));
+
+      if (upcomingSiteVisits[0] && Number(upcomingSiteVisits[0].count) > 0) {
+        alerts.push({
+          type: "info",
+          message: `${upcomingSiteVisits[0].count} evaluations due in next week`,
+          action: "View Schedule",
+          actionUrl: "/admin/evaluations"
+        });
+      }
+
+      const nearingDeadline = await db.select({ count: count() })
+        .from(evaluatorAssignments)
+        .where(and(
+          sql`${evaluatorAssignments.completedAt} IS NULL`,
+          sql`${evaluatorAssignments.deadline} IS NOT NULL AND ${evaluatorAssignments.deadline} <= CURRENT_DATE + INTERVAL '3 days'`
+        ));
+
+      if (nearingDeadline[0] && Number(nearingDeadline[0].count) > 0) {
+        alerts.push({
+          type: "warning",
+          message: `${nearingDeadline[0].count} evaluations nearing deadline`,
+          action: "Review",
+          actionUrl: "/admin/applications"
+        });
+      }
+
+      const pendingReview = await db.select({ count: count() })
+        .from(applications)
+        .where(eq(applications.status, "submitted"));
+
+      if (pendingReview[0] && Number(pendingReview[0].count) > 0) {
+        alerts.push({
+          type: "info",
+          message: `${pendingReview[0].count} new applications awaiting initial review`,
+          action: "Review",
+          actionUrl: "/admin/applications"
+        });
+      }
+
+      res.json({ alerts });
+    } catch (error) {
+      console.error("Admin alerts error:", error);
+      res.status(500).json({ message: "Failed to fetch alerts" });
     }
   });
 
